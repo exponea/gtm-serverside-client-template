@@ -1,4 +1,4 @@
-___TERMS_OF_SERVICE___
+﻿___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -33,13 +33,51 @@ ___TEMPLATE_PARAMETERS___
     "type": "TEXT",
     "name": "projectToken",
     "displayName": "Project token",
-    "simpleValueType": true
+    "simpleValueType": true,
+    "valueValidators": [
+      {
+        "type": "NON_EMPTY"
+      }
+    ]
   },
   {
     "type": "TEXT",
     "name": "targetAPI",
     "displayName": "API endpoint",
-    "simpleValueType": true
+    "simpleValueType": true,
+    "valueValidators": [
+      {
+        "type": "NON_EMPTY"
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
+    "name": "logsGroup",
+    "displayName": "Logs Settings",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "RADIO",
+        "name": "logType",
+        "radioItems": [
+          {
+            "value": "no",
+            "displayValue": "Do not log"
+          },
+          {
+            "value": "debug",
+            "displayValue": "Log to console during debug and preview"
+          },
+          {
+            "value": "always",
+            "displayValue": "Always log to console"
+          }
+        ],
+        "simpleValueType": true,
+        "defaultValue": "debug"
+      }
+    ]
   }
 ]
 
@@ -54,106 +92,150 @@ const getRequestMethod = require('getRequestMethod');
 const getRequestPath = require('getRequestPath');
 const getRequestQueryString = require('getRequestQueryString');
 const JSON = require('JSON');
-const log = require('logToConsole');
-const makeString = require('makeString');
+const logToConsole = require('logToConsole');
 const returnResponse = require('returnResponse');
 const setCookie = require('setCookie');
 const sendHttpRequest = require('sendHttpRequest');
 const setResponseBody = require('setResponseBody');
 const setResponseHeader = require('setResponseHeader');
 const setResponseStatus = require('setResponseStatus');
+const getContainerVersion = require('getContainerVersion');
 
-//Exponea Analytics Client: Logs
-log("Exponea Analytics Client - Incoming request method: ", getRequestMethod());
-log("Exponea Analytics Client - Incoming request path: ", getRequestPath());
+// Check if this Client should claim request
+if (getRequestPath() !== '/exponea') {
+    return;
+}
 
-log("Exponea Analytics Client: Valid REQUEST "+ getRequestPath() +" request claimed");
 claimRequest();
 
-//Exponea Analytics Client: Helper preventing CORS errors
-const sendResponse = () => {
-  const origin = getRequestHeader('Origin');
-  if (origin) {
-	setResponseHeader('access-control-allow-origin', origin);
-	setResponseHeader('access-control-allow-credentials', 'true');
-  }
-  returnResponse();
-};
 
-//Exponea Analytics Client: Helper parsing and setting set-cookie header
-const setCookieHeader = (setCookieHeader) => {
-  for (var i = 0; i < setCookieHeader.length; i++) {
-	var setCookieArray = setCookieHeader[i].split('; ').map(pair => pair.split('='));
-	var setCookieJson = "";
-	for (var j = 1; j < setCookieArray.length; j++) {
-	  if (j == 1) {
-		setCookieJson += '{';
-	  }
-      
-	  if (setCookieArray[j].length > 1)
-		setCookieJson += '"' + setCookieArray[j][0] + '": "' + setCookieArray[j][1] + '"';
-	  else 
-		setCookieJson += '"' + setCookieArray[j][0] + '": ' + true;
-      
-	  if (j + 1 < setCookieArray.length) 
-		setCookieJson += ',';
-	  else 
-		setCookieJson += '}';
-	}
-	setCookie(setCookieArray[0][0], setCookieArray[0][1], JSON.parse(setCookieJson));
-  }
-};
+const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
+const headerWhiteList = ['referer', 'user-agent', 'etag'];
 
-//Exponea Analytics Client: Sending HTTP request to Exponea and response back to the browser 
-var postBody = getRequestBody();
-log('Post Body', postBody);
+const containerVersion = getContainerVersion();
+const isDebug = containerVersion.debugMode;
+const isLoggingEnabled = determinateIsLoggingEnabled();
+const traceId = getRequestHeader('trace-id');
 
-var headerWhiteList = ['referer', 'user-agent', 'etag'];
-var headers = {};
+const requestOrigin = getRequestHeader('Origin');
+const requestMethod = getRequestMethod();
+const requestBody = getRequestBody();
+const requestUrl = generateRequestUrl();
+const requestHeaders = generateRequestHeaders();
 
-for (var i = 0; i < headerWhiteList.length; i++) {
-  const headerName = headerWhiteList[i];
-  const headerValue = getRequestHeader(headerName);
-  if (headerValue) {
-    headers[headerName] = getRequestHeader(headerName);
-  }
+if (isLoggingEnabled) {
+    logToConsole(JSON.stringify({
+        'Name': 'Exponea',
+        'Type': 'Request',
+        'TraceId': traceId,
+        'RequestOrigin': requestOrigin,
+        'RequestMethod': requestMethod,
+        'RequestUrl': requestUrl,
+        'RequestHeaders': requestHeaders,
+        'RequestBody': requestBody,
+    }));
 }
 
-var cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
-var cookies = [];
-headers.cookie = '';
-for (var i = 0; i < cookieWhiteList.length; i++) {
-  const cookieName = cookieWhiteList[i];
-  const cookieValue = getCookieValues(cookieName);
-  if (cookieValue && cookieValue.length) {
-    cookies.push(cookieName + '=' + cookieValue[0]);    
-  }
-}
-headers.cookie = cookies.join('; ');
+sendHttpRequest(requestUrl, (statusCode, headers, body) => {
+    if (isLoggingEnabled) {
+        logToConsole(JSON.stringify({
+            'Name': 'Exponea',
+            'Type': 'Response',
+            'TraceId': traceId,
+            'ResponseStatusCode': statusCode,
+            'ResponseHeaders': headers,
+            'ResponseBody': body,
+        }));
+    }
 
-log('Request Headers', headers);
-let url = data.targetAPI + getRequestPath();
-const queryParams = getRequestQueryString();
-if (queryParams) {
-  url = url + '?' + queryParams;
+    for (const key in headers) {
+        if (key === 'set-cookie') {
+            setResponseCookies(headers[key]);
+        } else {
+            setResponseHeader(key, headers[key]);
+        }
+    }
+
+    setResponseBody(body);
+    setResponseStatus(statusCode);
+
+    if (requestOrigin) {
+        setResponseHeader('access-control-allow-origin', requestOrigin);
+        setResponseHeader('access-control-allow-credentials', 'true');
+    }
+
+    returnResponse();
+}, {method: requestMethod, headers: requestHeaders}, requestBody);
+
+
+function generateRequestUrl() {
+    let url = data.targetAPI + getRequestPath();
+    const queryParams = getRequestQueryString();
+
+    if (queryParams) url = url + '?' + queryParams;
+
+    return url;
 }
 
-sendHttpRequest(url, (statusCode, headers, body) => {
-  //Exponea Analytics Client: Set response headers
-  log('Response Headers', headers);
-  for (const key in headers) {
-	log(key, headers[key]);
-	if (key === 'set-cookie') {
-	  setCookieHeader(headers[key]);
-	} else {
-	  setResponseHeader(key, headers[key]);
-	}
-  }
-  setResponseBody(body);
-  setResponseStatus(statusCode);
-  log('Exponea Analytics Client: REQUEST processed. Sending response ...');
-  sendResponse();
-}, {method: getRequestMethod(), headers: headers}, postBody);
+function generateRequestHeaders() {
+    let headers = {};
+    let cookies = [];
+
+    for (let i = 0; i < headerWhiteList.length; i++) {
+        let headerName = headerWhiteList[i];
+        let headerValue = getRequestHeader(headerName);
+
+        if (headerValue) {
+            headers[headerName] = getRequestHeader(headerName);
+        }
+    }
+
+    headers.cookie = '';
+
+    for (let i = 0; i < cookieWhiteList.length; i++) {
+        let cookieName = cookieWhiteList[i];
+        let cookieValue = getCookieValues(cookieName);
+
+        if (cookieValue && cookieValue.length) {
+            cookies.push(cookieName + '=' + cookieValue[0]);
+        }
+    }
+
+    headers.cookie = cookies.join('; ');
+
+    return headers;
+}
+
+function setResponseCookies(setCookieHeader) {
+    for (let i = 0; i < setCookieHeader.length; i++) {
+        let setCookieArray = setCookieHeader[i].split('; ').map(pair => pair.split('='));
+        let setCookieJson = '';
+
+        for (let j = 1; j < setCookieArray.length; j++) {
+            if (j === 1) setCookieJson += '{';
+            if (setCookieArray[j].length > 1) setCookieJson += '"' + setCookieArray[j][0] + '": "' + setCookieArray[j][1] + '"'; else setCookieJson += '"' + setCookieArray[j][0] + '": ' + true;
+            if (j + 1 < setCookieArray.length) setCookieJson += ','; else setCookieJson += '}';
+        }
+
+        setCookie(setCookieArray[0][0], setCookieArray[0][1], JSON.parse(setCookieJson));
+    }
+}
+
+function determinateIsLoggingEnabled() {
+    if (!data.logType) {
+        return isDebug;
+    }
+
+    if (data.logType === 'no') {
+        return false;
+    }
+
+    if (data.logType === 'debug') {
+        return isDebug;
+    }
+
+    return data.logType === 'always';
+}
 
 
 ___SERVER_PERMISSIONS___
@@ -170,7 +252,7 @@ ___SERVER_PERMISSIONS___
           "key": "environments",
           "value": {
             "type": 1,
-            "string": "debug"
+            "string": "all"
           }
         }
       ]
@@ -361,6 +443,16 @@ ___SERVER_PERMISSIONS___
     },
     "clientAnnotations": {
       "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "read_container_data",
+        "versionId": "1"
+      },
+      "param": []
     },
     "isRequired": true
   }
