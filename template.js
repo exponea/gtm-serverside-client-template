@@ -9,12 +9,40 @@ const JSON = require('JSON');
 const logToConsole = require('logToConsole');
 const returnResponse = require('returnResponse');
 const setCookie = require('setCookie');
+const templateDataStorage = require('templateDataStorage');
+const sendHttpGet = require('sendHttpGet');
+const getTimestampMillis = require('getTimestampMillis');
 const sendHttpRequest = require('sendHttpRequest');
 const setResponseBody = require('setResponseBody');
 const setResponseHeader = require('setResponseHeader');
 const setResponseStatus = require('setResponseStatus');
 const getContainerVersion = require('getContainerVersion');
 const path = getRequestPath();
+
+// Check if this Client should serve exponea.js file
+if (path === data.proxyJsFilePath) {
+    claimRequest();
+
+    const now = getTimestampMillis();
+    const thirty_minutes_ago = now - (30 * 60 * 1000);
+
+    if (templateDataStorage.getItemCopy('exponea_js') == null || templateDataStorage.getItemCopy('exponea_stored_at') < thirty_minutes_ago) {
+        sendHttpGet('https://api.exponea.com/js/exponea.min.js', (statusCode, headers, body) => {
+            if (statusCode === 200) {
+                templateDataStorage.setItemCopy('exponea_js', body);
+                templateDataStorage.setItemCopy('exponea_headers', headers);
+                templateDataStorage.setItemCopy('exponea_stored_at', now);
+            }
+            sendProxyResponse(body, headers, statusCode);
+        });
+    } else {
+        sendProxyResponse(
+            templateDataStorage.getItemCopy('exponea_js'),
+            templateDataStorage.getItemCopy('exponea_headers'),
+            200
+        );
+    }
+}
 
 // Check if this Client should claim request
 if (path !== '/bulk' && path !== '/managed-tags/show'  && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
@@ -134,6 +162,17 @@ function setResponseCookies(setCookieHeader) {
 
         setCookie(setCookieArray[0][0], setCookieArray[0][1], JSON.parse(setCookieJson));
     }
+}
+
+function sendProxyResponse(response, headers, statusCode) {
+    setResponseStatus(statusCode);
+    setResponseBody(response);
+
+    for (const key in headers) {
+        setResponseHeader(key, headers[key]);
+    }
+
+    returnResponse();
 }
 
 function determinateIsLoggingEnabled() {
