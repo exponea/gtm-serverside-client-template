@@ -115,6 +115,7 @@ const setResponseBody = require('setResponseBody');
 const setResponseHeader = require('setResponseHeader');
 const setResponseStatus = require('setResponseStatus');
 const getContainerVersion = require('getContainerVersion');
+const getRemoteAddress = require('getRemoteAddress');
 const path = getRequestPath();
 
 // Check if this Client should serve exponea.js file
@@ -125,13 +126,13 @@ if (path === data.proxyJsFilePath) {
     const thirty_minutes_ago = now - (30 * 60 * 1000);
 
     if (templateDataStorage.getItemCopy('exponea_js') == null || templateDataStorage.getItemCopy('exponea_stored_at') < thirty_minutes_ago) {
-        sendHttpGet('https://api.exponea.com/js/exponea.min.js', (statusCode, headers, body) => {
-            if (statusCode === 200) {
-                templateDataStorage.setItemCopy('exponea_js', body);
-                templateDataStorage.setItemCopy('exponea_headers', headers);
+        sendHttpGet('https://api.exponea.com/js/exponea.min.js', {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+            if (result.statusCode === 200) {
+                templateDataStorage.setItemCopy('exponea_js', result.body);
+                templateDataStorage.setItemCopy('exponea_headers', result.headers);
                 templateDataStorage.setItemCopy('exponea_stored_at', now);
             }
-            sendProxyResponse(body, headers, statusCode);
+            sendProxyResponse(result.body, result.headers, result.statusCode);
         });
     } else {
         sendProxyResponse(
@@ -142,8 +143,13 @@ if (path === data.proxyJsFilePath) {
     }
 }
 
+// Check if this Client should serve exponea.js.map file (Just only to avoid annoying error in console)
+if (path === '/exponea.min.js.map') {
+    sendProxyResponse('{"version": 1, "mappings": "", "sources": [], "names": [], "file": ""}', {'Content-Type': 'application/json'}, 200);
+}
+
 // Check if this Client should claim request
-if (path !== '/bulk' && path !== '/managed-tags/show'  && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
+if (path !== '/bulk' && path !== '/managed-tags/show' && path !== '/campaigns/banners/show' && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
     return;
 }
 
@@ -177,28 +183,28 @@ if (isLoggingEnabled) {
     }));
 }
 
-sendHttpRequest(requestUrl, (statusCode, headers, body) => {
+sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, requestBody).then((result) => {
     if (isLoggingEnabled) {
         logToConsole(JSON.stringify({
             'Name': 'Exponea',
             'Type': 'Response',
             'TraceId': traceId,
-            'ResponseStatusCode': statusCode,
-            'ResponseHeaders': headers,
-            'ResponseBody': body,
+            'ResponseStatusCode': result.statusCode,
+            'ResponseHeaders': result.headers,
+            'ResponseBody': result.body,
         }));
     }
 
-    for (const key in headers) {
+    for (const key in result.headers) {
         if (key === 'set-cookie') {
-            setResponseCookies(headers[key]);
+            setResponseCookies(result.headers[key]);
         } else {
-            setResponseHeader(key, headers[key]);
+            setResponseHeader(key, result.headers[key]);
         }
     }
 
-    setResponseBody(body);
-    setResponseStatus(statusCode);
+    setResponseBody(result.body);
+    setResponseStatus(result.statusCode);
 
     if (requestOrigin) {
         setResponseHeader('access-control-allow-origin', requestOrigin);
@@ -206,7 +212,7 @@ sendHttpRequest(requestUrl, (statusCode, headers, body) => {
     }
 
     returnResponse();
-}, {method: requestMethod, headers: requestHeaders}, requestBody);
+});
 
 
 function generateRequestUrl() {
@@ -243,6 +249,7 @@ function generateRequestHeaders() {
     }
 
     headers.cookie = cookies.join('; ');
+    headers['X-Forwarded-For'] = getRemoteAddress();
 
     return headers;
 }
