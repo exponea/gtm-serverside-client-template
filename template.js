@@ -18,6 +18,7 @@ const setResponseHeader = require('setResponseHeader');
 const setResponseStatus = require('setResponseStatus');
 const getContainerVersion = require('getContainerVersion');
 const getRemoteAddress = require('getRemoteAddress');
+const makeString = require('makeString');
 const path = getRequestPath();
 
 // Check if this Client should serve exponea.js file
@@ -74,7 +75,7 @@ const requestHeaders = generateRequestHeaders();
 
 if (isLoggingEnabled) {
     logToConsole(JSON.stringify({
-        'Name': 'Exponea',
+        'Name': 'Bloomreach',
         'Type': 'Request',
         'TraceId': traceId,
         'RequestOrigin': requestOrigin,
@@ -88,7 +89,7 @@ if (isLoggingEnabled) {
 sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, requestBody).then((result) => {
     if (isLoggingEnabled) {
         logToConsole(JSON.stringify({
-            'Name': 'Exponea',
+            'Name': 'Bloomreach',
             'Type': 'Response',
             'TraceId': traceId,
             'ResponseStatusCode': result.statusCode,
@@ -158,16 +159,25 @@ function generateRequestHeaders() {
 
 function setResponseCookies(setCookieHeader) {
     for (let i = 0; i < setCookieHeader.length; i++) {
-        let setCookieArray = setCookieHeader[i].split('; ').map(pair => pair.split('='));
-        let setCookieJson = '';
+        let cookieArray = setCookieHeader[i].split('; ').map(pair => pair.split('='));
+        let cookieOptions = cookieArray.reduce((options, pair) => {
+            let key = makeString(pair[0]).trim().toLowerCase();
+            let value = pair[1];
 
-        for (let j = 1; j < setCookieArray.length; j++) {
-            if (j === 1) setCookieJson += '{';
-            if (setCookieArray[j].length > 1) setCookieJson += '"' + setCookieArray[j][0] + '": "' + setCookieArray[j][1] + '"'; else setCookieJson += '"' + setCookieArray[j][0] + '": ' + true;
-            if (j + 1 < setCookieArray.length) setCookieJson += ','; else setCookieJson += '}';
-        }
+            if (['samesite', 'same-site'].indexOf(key) >= 0) {
+                options['sameSite'] = value;
+            } else if (['httponly', 'http-only'].indexOf(key) >= 0) {
+                options['httpOnly'] = value;
+            } else if (['domain', 'expires', 'max-age', 'path'].indexOf(key) >= 0) {
+                options[key] = value;
+            } else if (key === 'secure') {
+                options[key] = true;
+            }
 
-        setCookie(setCookieArray[0][0], setCookieArray[0][1], JSON.parse(setCookieJson));
+            return options;
+        }, {});
+
+        setCookie(cookieArray[0][0], cookieArray[0][1], cookieOptions);
     }
 }
 
