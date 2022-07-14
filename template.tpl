@@ -144,7 +144,7 @@ if (path === data.proxyJsFilePath) {
 }
 
 // Check if this Client should serve exponea.js.map file (Just only to avoid annoying error in console)
-if (path === '/exponea.min.js.map') {
+if (path === '/exponea.min.js.map' || path === '/js/exponea.min.js.map') {
     sendProxyResponse('{"version": 1, "mappings": "", "sources": [], "names": [], "file": ""}', {'Content-Type': 'application/json'}, 200);
 }
 
