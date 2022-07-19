@@ -26,7 +26,7 @@ if (path === data.proxyJsFilePath) {
     claimRequest();
 
     const now = getTimestampMillis();
-    const thirty_minutes_ago = now - (30 * 60 * 1000);
+    const thirty_minutes_ago = now - 1800000;
 
     if (templateDataStorage.getItemCopy('exponea_js') == null || templateDataStorage.getItemCopy('exponea_stored_at') < thirty_minutes_ago) {
         sendHttpGet('https://api.exponea.com/js/exponea.min.js', {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
@@ -46,8 +46,17 @@ if (path === data.proxyJsFilePath) {
     }
 }
 
+// Check if this Client should serve modifications.min.js file
+if (endsWith(path, '/modifications.min.js')) {
+    claimRequest();
+
+    sendHttpGet('https://api.exponea.com'+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+        sendProxyResponse(result.body, result.headers, result.statusCode);
+    });
+}
+
 // Check if this Client should serve exponea.js.map file (Just only to avoid annoying error in console)
-if (path === '/exponea.min.js.map') {
+if (path === '/exponea.min.js.map' || path === '/js/exponea.min.js.map') {
     sendProxyResponse('{"version": 1, "mappings": "", "sources": [], "names": [], "file": ""}', {'Content-Type': 'application/json'}, 200);
 }
 
@@ -62,10 +71,8 @@ claimRequest();
 const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
 const headerWhiteList = ['referer', 'user-agent', 'etag'];
 
-const containerVersion = getContainerVersion();
-const isDebug = containerVersion.debugMode;
 const isLoggingEnabled = determinateIsLoggingEnabled();
-const traceId = getRequestHeader('trace-id');
+const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
 
 const requestOrigin = getRequestHeader('Origin');
 const requestMethod = getRequestMethod();
@@ -193,6 +200,12 @@ function sendProxyResponse(response, headers, statusCode) {
 }
 
 function determinateIsLoggingEnabled() {
+    const containerVersion = getContainerVersion();
+    const isDebug = !!(
+        containerVersion &&
+        (containerVersion.debugMode || containerVersion.previewMode)
+    );
+
     if (!data.logType) {
         return isDebug;
     }
@@ -206,4 +219,8 @@ function determinateIsLoggingEnabled() {
     }
 
     return data.logType === 'always';
+}
+
+function endsWith(str, search) {
+    return str.indexOf(search, str.length - search.length) !== -1;
 }
