@@ -54,7 +54,7 @@ ___TEMPLATE_PARAMETERS___
   {
     "type": "TEXT",
     "name": "proxyJsFilePath",
-    "displayName": "A path that will be used for the exponea.js serving",
+    "displayName": "A path that will be used for the exponea.js serving, multiple paths may be separated by comma",
     "simpleValueType": true,
     "valueValidators": [
       {
@@ -107,9 +107,7 @@ const JSON = require('JSON');
 const logToConsole = require('logToConsole');
 const returnResponse = require('returnResponse');
 const setCookie = require('setCookie');
-const templateDataStorage = require('templateDataStorage');
 const sendHttpGet = require('sendHttpGet');
-const getTimestampMillis = require('getTimestampMillis');
 const sendHttpRequest = require('sendHttpRequest');
 const setResponseBody = require('setResponseBody');
 const setResponseHeader = require('setResponseHeader');
@@ -119,81 +117,65 @@ const getRemoteAddress = require('getRemoteAddress');
 const path = getRequestPath();
 
 // Check if this Client should serve exponea.js file
-if (path === data.proxyJsFilePath) {
+if (data.proxyJsFilePath.split(',').reduce((res,proxyPath)=>res || equalOrStartsOrEnds(path,proxyPath), false)) {
     claimRequest();
-
-    const now = getTimestampMillis();
-    const thirty_minutes_ago = now - (30 * 60 * 1000);
-
-    if (templateDataStorage.getItemCopy('exponea_js') == null || templateDataStorage.getItemCopy('exponea_stored_at') < thirty_minutes_ago) {
-        sendHttpGet('https://api.exponea.com/js/exponea.min.js', {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
-            if (result.statusCode === 200) {
-                templateDataStorage.setItemCopy('exponea_js', result.body);
-                templateDataStorage.setItemCopy('exponea_headers', result.headers);
-                templateDataStorage.setItemCopy('exponea_stored_at', now);
-            }
-            sendProxyResponse(result.body, result.headers, result.statusCode);
-        });
-    } else {
-        sendProxyResponse(
-            templateDataStorage.getItemCopy('exponea_js'),
-            templateDataStorage.getItemCopy('exponea_headers'),
-            200
-        );
-    }
+    log({
+        'Name': 'Exponea',
+        'Type': 'Serving JS',
+        'path': path
+    });
+    sendHttpGet(data.targetAPI+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+      sendProxyResponse(result.body, result.headers, result.statusCode);
+    });
 }
 
-// Check if this Client should serve exponea.js.map file (Just only to avoid annoying error in console)
-if (path === '/exponea.min.js.map') {
-    sendProxyResponse('{"version": 1, "mappings": "", "sources": [], "names": [], "file": ""}', {'Content-Type': 'application/json'}, 200);
-}
-
+var validPaths = [
+  '/bulk',
+  '/managed-tags/show',
+  '/campaigns/banners/show',
+  '/webxp/projects/'+data.projectToken+'/'
+];
 // Check if this Client should claim request
-if (path !== '/bulk' && path !== '/managed-tags/show' && path !== '/campaigns/banners/show' && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
+if (!validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath))) {
+    log({
+        'Name': 'Exponea',
+        'Type': 'Invalid path',
+        'path': path
+    });
     return;
 }
 
 claimRequest();
 
-
 const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
 const headerWhiteList = ['referer', 'user-agent', 'etag'];
 
-const containerVersion = getContainerVersion();
-const isDebug = containerVersion.debugMode;
-const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = getRequestHeader('trace-id');
-
 const requestOrigin = getRequestHeader('Origin');
 const requestMethod = getRequestMethod();
 const requestBody = getRequestBody();
 const requestUrl = generateRequestUrl();
 const requestHeaders = generateRequestHeaders();
 
-if (isLoggingEnabled) {
-    logToConsole(JSON.stringify({
-        'Name': 'Exponea',
-        'Type': 'Request',
-        'TraceId': traceId,
-        'RequestOrigin': requestOrigin,
-        'RequestMethod': requestMethod,
-        'RequestUrl': requestUrl,
-        'RequestHeaders': requestHeaders,
-        'RequestBody': requestBody,
-    }));
-}
-
+log({
+    'Name': 'Exponea',
+    'Type': 'Request',
+    'TraceId': traceId,
+    'RequestOrigin': requestOrigin,
+    'RequestMethod': requestMethod,
+    'RequestUrl': requestUrl,
+    'RequestHeaders': requestHeaders,
+    'RequestBody': requestBody,
+});
 sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, requestBody).then((result) => {
-    if (isLoggingEnabled) {
-        logToConsole(JSON.stringify({
-            'Name': 'Exponea',
-            'Type': 'Response',
-            'TraceId': traceId,
-            'ResponseStatusCode': result.statusCode,
-            'ResponseHeaders': result.headers,
-            'ResponseBody': result.body,
-        }));
-    }
+    log({
+      'Name': 'Exponea',
+      'Type': 'Response',
+      'TraceId': traceId,
+      'ResponseStatusCode': result.statusCode,
+      'ResponseHeaders': result.headers,
+      'ResponseBody': result.body,
+    });
 
     for (const key in result.headers) {
         if (key === 'set-cookie') {
@@ -281,6 +263,8 @@ function sendProxyResponse(response, headers, statusCode) {
 }
 
 function determinateIsLoggingEnabled() {
+    const containerVersion = getContainerVersion();
+    const isDebug = containerVersion.debugMode;
     if (!data.logType) {
         return isDebug;
     }
@@ -296,6 +280,21 @@ function determinateIsLoggingEnabled() {
     return data.logType === 'always';
 }
 
+function log(data) {
+    const isLoggingEnabled = determinateIsLoggingEnabled();
+    if (isLoggingEnabled) {
+        logToConsole(JSON.stringify(data));
+    }
+}
+
+function equalOrStartsOrEnds(string, substring) {
+    var subsIndex = string.indexOf(substring);
+    var subsLength = substring.length;
+    var result = string === substring ||
+        ( subsIndex === 0 ) ||
+        ( subsIndex > 0 && ((subsIndex+subsLength) === string.length));
+    return result;
+}
 
 ___SERVER_PERMISSIONS___
 
