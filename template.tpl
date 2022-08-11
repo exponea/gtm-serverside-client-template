@@ -64,6 +64,13 @@ ___TEMPLATE_PARAMETERS___
     "defaultValue": "/js/exponea.min.js"
   },
   {
+    "type": "TEXT",
+    "name": "validPaths",
+    "displayName": "Valid paths which should be proxying to exponea backend, multiple paths may be separated by comma",
+    "simpleValueType": true,
+    "defaultValue": ""
+  },
+  {
     "type": "GROUP",
     "name": "logsGroup",
     "displayName": "Logs Settings",
@@ -114,10 +121,15 @@ const setResponseHeader = require('setResponseHeader');
 const setResponseStatus = require('setResponseStatus');
 const getContainerVersion = require('getContainerVersion');
 const getRemoteAddress = require('getRemoteAddress');
+const getType = require('getType');
 const path = getRequestPath();
 
+const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
+const headerWhiteList = ['referer', 'user-agent', 'etag'];
+
+
 // Check if this Client should serve exponea.js file
-if (data.proxyJsFilePath.split(',').reduce((res,proxyPath)=>res || equalOrStartsOrEnds(path,proxyPath), false)) {
+if (splitAndSanitize(data.proxyJsFilePath).reduce((res,proxyPath)=>res || equalOrStartsOrEnds(path,proxyPath), false)) {
     claimRequest();
     log({
         'Name': 'Exponea',
@@ -133,68 +145,88 @@ var validPaths = [
   '/bulk',
   '/managed-tags/show',
   '/campaigns/banners/show',
-  '/webxp/projects/'+data.projectToken+'/'
+  '/campaigns/experiments/show',
+  '/campaigns/html/get',
+  '/optimization/recommend/user',
+  '/webxp/projects/'+data.projectToken+'/',
+  '/webxp/data/modifications/'+data.projectToken+'/',
+  '/webxp/bandits/reward'
 ];
+var extraValidPaths = splitAndSanitize(data.validPaths);
+
+var isValidPath = false; 
+
 // Check if this Client should claim request
-if (!validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath))) {
+if (validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath), false)) {
     log({
         'Name': 'Exponea',
-        'Type': 'Invalid path',
+        'Type': 'Valid path',
         'path': path
     });
-    return;
+    isValidPath = true;
+}
+// Check if this Client should claim request
+if (extraValidPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath), false)) {
+    log({
+        'Name': 'Exponea',
+        'Type': 'Valid path - extra',
+        'path': path
+    });
+    isValidPath = true;
 }
 
-claimRequest();
+if (!isValidPath) {
+  return;
+} else {
 
-const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
-const headerWhiteList = ['referer', 'user-agent', 'etag'];
+    claimRequest();
 
-const traceId = getRequestHeader('trace-id');
-const requestOrigin = getRequestHeader('Origin');
-const requestMethod = getRequestMethod();
-const requestBody = getRequestBody();
-const requestUrl = generateRequestUrl();
-const requestHeaders = generateRequestHeaders();
+    const traceId = getRequestHeader('trace-id');
+    const requestOrigin = getRequestHeader('Origin');
+    const requestMethod = getRequestMethod();
+    const requestBody = getRequestBody();
+    const requestUrl = generateRequestUrl();
+    const requestHeaders = generateRequestHeaders();
 
-log({
-    'Name': 'Exponea',
-    'Type': 'Request',
-    'TraceId': traceId,
-    'RequestOrigin': requestOrigin,
-    'RequestMethod': requestMethod,
-    'RequestUrl': requestUrl,
-    'RequestHeaders': requestHeaders,
-    'RequestBody': requestBody,
-});
-sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, requestBody).then((result) => {
     log({
-      'Name': 'Exponea',
-      'Type': 'Response',
-      'TraceId': traceId,
-      'ResponseStatusCode': result.statusCode,
-      'ResponseHeaders': result.headers,
-      'ResponseBody': result.body,
+        'Name': 'Exponea',
+        'Type': 'Request',
+        'TraceId': traceId,
+        'RequestOrigin': requestOrigin,
+        'RequestMethod': requestMethod,
+        'RequestUrl': requestUrl,
+        'RequestHeaders': requestHeaders,
+        'RequestBody': requestBody,
     });
+    sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, requestBody).then((result) => {
+        log({
+        'Name': 'Exponea',
+        'Type': 'Response',
+        'TraceId': traceId,
+        'ResponseStatusCode': result.statusCode,
+        'ResponseHeaders': result.headers,
+        'ResponseBody': result.body,
+        });
 
-    for (const key in result.headers) {
-        if (key === 'set-cookie') {
-            setResponseCookies(result.headers[key]);
-        } else {
-            setResponseHeader(key, result.headers[key]);
+        for (const key in result.headers) {
+            if (key === 'set-cookie') {
+                setResponseCookies(result.headers[key]);
+            } else {
+                setResponseHeader(key, result.headers[key]);
+            }
         }
-    }
 
-    setResponseBody(result.body);
-    setResponseStatus(result.statusCode);
+        setResponseBody(result.body||"");
+        setResponseStatus(result.statusCode);
 
-    if (requestOrigin) {
-        setResponseHeader('access-control-allow-origin', requestOrigin);
-        setResponseHeader('access-control-allow-credentials', 'true');
-    }
+        if (requestOrigin) {
+            setResponseHeader('access-control-allow-origin', requestOrigin);
+            setResponseHeader('access-control-allow-credentials', 'true');
+        }
 
-    returnResponse();
-});
+        returnResponse();
+    });
+}
 
 
 function generateRequestUrl() {
@@ -294,6 +326,11 @@ function equalOrStartsOrEnds(string, substring) {
         ( subsIndex === 0 ) ||
         ( subsIndex > 0 && ((subsIndex+subsLength) === string.length));
     return result;
+}
+
+function splitAndSanitize(arr) {
+    if (getType(arr) !== 'string') return [];
+    return arr.split(',').map(a=>a.trim()).filter(a=>a);
 }
 
 ___SERVER_PERMISSIONS___
