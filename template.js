@@ -55,6 +55,15 @@ if (endsWith(path, '/modifications.min.js')) {
     });
 }
 
+// Check if this Client should serve editor files
+if (startsWith(path, '/editor/')) {
+    claimRequest();
+
+    sendHttpGet('https://api.exponea.com'+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+        sendProxyResponse(result.body, result.headers, result.statusCode);
+    });
+}
+
 // Check if this Client should serve exponea.js.map file (Just only to avoid annoying error in console)
 if (path === '/exponea.min.js.map' || path === '/js/exponea.min.js.map') {
     sendProxyResponse('{"version": 1, "mappings": "", "sources": [], "names": [], "file": ""}', {'Content-Type': 'application/json'}, 200);
@@ -223,4 +232,8 @@ function determinateIsLoggingEnabled() {
 
 function endsWith(str, search) {
     return str.indexOf(search, str.length - search.length) !== -1;
+}
+
+function startsWith(str, search) {
+    return str.indexOf(search, 0) === 0;
 }
