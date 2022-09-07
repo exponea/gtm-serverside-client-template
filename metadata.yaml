@@ -1,4 +1,6 @@
 homepage: "https://www.bloomreach.com/"
 versions:
+  - sha: 88deff1f244b29b197014edd40a2bfb64441d2c4
+    changeNotes: Add support of editor path.
   - sha: acfeb51ad5081147750220c222e14b74211ffa9b
     changeNotes: Initial release.
