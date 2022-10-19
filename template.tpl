@@ -118,6 +118,7 @@ const getContainerVersion = require('getContainerVersion');
 const getRemoteAddress = require('getRemoteAddress');
 const makeString = require('makeString');
 const path = getRequestPath();
+const queryString = getRequestQueryString();
 
 // Check if this Client should serve exponea.js file
 if (path === data.proxyJsFilePath) {
@@ -127,7 +128,7 @@ if (path === data.proxyJsFilePath) {
     const thirty_minutes_ago = now - 1800000;
 
     if (templateDataStorage.getItemCopy('exponea_js') == null || templateDataStorage.getItemCopy('exponea_stored_at') < thirty_minutes_ago) {
-        sendHttpGet('https://api.exponea.com/js/exponea.min.js', {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+        sendHttpGet(data.targetAPI+'/js/exponea.min.js', {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
             if (result.statusCode === 200) {
                 templateDataStorage.setItemCopy('exponea_js', result.body);
                 templateDataStorage.setItemCopy('exponea_headers', result.headers);
@@ -148,7 +149,7 @@ if (path === data.proxyJsFilePath) {
 if (endsWith(path, '/modifications.min.js')) {
     claimRequest();
 
-    sendHttpGet('https://api.exponea.com'+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+    sendHttpGet(data.targetAPI+path+'?'+queryString, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
         sendProxyResponse(result.body, result.headers, result.statusCode);
     });
 }
@@ -157,7 +158,7 @@ if (endsWith(path, '/modifications.min.js')) {
 if (startsWith(path, '/editor/')) {
     claimRequest();
 
-    sendHttpGet('https://api.exponea.com'+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+    sendHttpGet(data.targetAPI+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
         sendProxyResponse(result.body, result.headers, result.statusCode);
     });
 }
@@ -168,7 +169,7 @@ if (path === '/exponea.min.js.map' || path === '/js/exponea.min.js.map') {
 }
 
 // Check if this Client should claim request
-if (path !== '/bulk' && path !== '/managed-tags/show' && path !== '/campaigns/banners/show' && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
+if (path !== '/bulk' && path !== '/managed-tags/show' && path !== '/campaigns/banners/show' && path !== '/campaigns/experiments/show' && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
     return;
 }
 
