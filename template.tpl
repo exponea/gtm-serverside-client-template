@@ -149,7 +149,11 @@ if (path === '/exponea.min.js.map') {
 }
 
 // Check if this Client should claim request
-if (path !== '/bulk' && path !== '/managed-tags/show' && path !== '/campaigns/banners/show' && path !== ('/webxp/projects/'+data.projectToken+'/bundle')) {
+if (path !== '/bulk' 
+    && path !== '/managed-tags/show' 
+    && path !== '/campaigns/banners/show' 
+    && path !== ('/webxp/projects/'+data.projectToken+'/bundle')
+    && path.indexOf("link-ids") > -1) {
     return;
 }
 
@@ -203,7 +207,10 @@ sendHttpRequest(requestUrl, {method: requestMethod, headers: requestHeaders}, re
         }
     }
 
-    setResponseBody(result.body);
+    // link-ids request does not return any payload, so the response will fail without this condition
+    if (result.body) {
+      setResponseBody(result.body);
+    }
     setResponseStatus(result.statusCode);
 
     if (requestOrigin) {
