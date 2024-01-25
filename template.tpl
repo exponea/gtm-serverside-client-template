@@ -153,7 +153,7 @@ if (path !== '/bulk'
     && path !== '/managed-tags/show' 
     && path !== '/campaigns/banners/show' 
     && path !== ('/webxp/projects/'+data.projectToken+'/bundle')
-    && path.indexOf("link-ids") > -1) {
+    && path.indexOf("link-ids") === -1) {
     return;
 }
 
