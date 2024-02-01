@@ -1,0 +1,29 @@
+{
+  "name": "gtm-serverside-client-template",
+  "version": "1.0.0",
+  "description": "Google Tag Manager templates in this repository are provided as a BETA feature and should not be used in production environments.  We are providing the templates for technically advanced customers who understand the underlying code of the templates and are able to modify the template according to their needs.  Bloomreach does not currently provide production-level support for any kind of usage of this template.",
+  "main": "template.js",
+  "scripts": {
+    "test": "jest",
+    "build:template": "ejs ./template.tpl.ejs -o ./template.tpl"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/exponea/gtm-serverside-client-template.git"
+  },
+  "author": "Bloomreach (Exponea)",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/exponea/gtm-serverside-client-template/issues"
+  },
+  "homepage": "https://github.com/exponea/gtm-serverside-client-template#readme",
+  "devDependencies": {
+    "@babel/preset-env": "^7.18.10",
+    "babel-jest": "^28.1.3",
+    "dotenv": "^16.0.1",
+    "ejs": "^3.1.8",
+    "jest": "^28.1.3",
+    "node-fetch": "^3.2.10",
+    "url-join": "^5.0.0"
+  }
+}

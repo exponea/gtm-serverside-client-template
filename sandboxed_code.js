@@ -22,37 +22,48 @@ const path = getRequestPath();
 const cookieWhiteList = ['xnpe_' + data.projectToken, '__exponea_etc__', '__exponea_time2__'];
 const headerWhiteList = ['referer', 'user-agent', 'etag'];
 
+log({
+    'Name': 'Exponea',
+    'Type': 'Processing',
+    'data': data,
+    'path': path
+});
 
-// Check if this Client should serve exponea.js file
-if (splitAndSanitize(data.proxyJsFilePath).reduce((res,proxyPath)=>res || equalOrStartsOrEnds(path,proxyPath), false)) {
+// Check if this Client should proxy static files
+if (splitAndSanitize(data.proxyStaticFilePaths).reduce((res,proxyPath)=>res || equalOrStartsOrEnds(path,proxyPath), false)) {
     claimRequest();
+    const resultUrl = combineURLs(data.targetAPI, path);
     log({
         'Name': 'Exponea',
         'Type': 'Serving JS',
-        'path': path
+        'targetAPI': data.targetAPI,
+        'path': path,
+        'resultUrl': resultUrl
     });
-    sendHttpGet(data.targetAPI+path, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
+    sendHttpGet(resultUrl, {headers: {'X-Forwarded-For': getRemoteAddress()}}).then((result) => {
       sendProxyResponse(result.body, result.headers, result.statusCode);
     });
+    return;
 }
 
-var validPaths = [
+const validPaths = [
   '/bulk',
   '/managed-tags/show',
   '/campaigns/banners/show',
   '/campaigns/experiments/show',
   '/campaigns/html/get',
   '/optimization/recommend/user',
-  '/webxp/projects/'+data.projectToken+'/',
-  '/webxp/data/modifications/'+data.projectToken+'/',
-  '/webxp/bandits/reward'
+  '/webxp/projects/',
+  '/webxp/data/modifications/',
+  '/webxp/bandits/reward',
+  '/webxp/script-async/',
+  '/webxp/script/'
 ];
-var extraValidPaths = splitAndSanitize(data.validPaths);
 
-var isValidPath = false; 
+let isValidPath = false; 
 
 // Check if this Client should claim request
-if (validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath), false)) {
+if (validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath,true), false)) {
     log({
         'Name': 'Exponea',
         'Type': 'Valid path',
@@ -60,15 +71,7 @@ if (validPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath
     });
     isValidPath = true;
 }
-// Check if this Client should claim request
-if (extraValidPaths.reduce((res,validPath)=>res || equalOrStartsOrEnds(path,validPath), false)) {
-    log({
-        'Name': 'Exponea',
-        'Type': 'Valid path - extra',
-        'path': path
-    });
-    isValidPath = true;
-}
+
 
 if (!isValidPath) {
   return;
@@ -125,7 +128,7 @@ if (!isValidPath) {
 
 
 function generateRequestUrl() {
-    let url = data.targetAPI + getRequestPath();
+    let url = combineURLs(data.targetAPI, getRequestPath());
     const queryParams = getRequestQueryString();
 
     if (queryParams) url = url + '?' + queryParams;
@@ -214,16 +217,56 @@ function log(data) {
     }
 }
 
-function equalOrStartsOrEnds(string, substring) {
-    var subsIndex = string.indexOf(substring);
-    var subsLength = substring.length;
-    var result = string === substring ||
-        ( subsIndex === 0 ) ||
-        ( subsIndex > 0 && ((subsIndex+subsLength) === string.length));
-    return result;
+function startsWith(string, substring) {
+    return string.indexOf(substring) === 0;
+}
+
+function endsWith(string, substring) {
+    const lastIndex = string.lastIndexOf(substring);
+    return lastIndex > -1 && (string.length === (lastIndex + substring.length));
+}
+
+
+function equalOrStartsOrEnds(string, substring, withWildcard) {
+    if (substring.length === 0) return false;
+    
+    const containWildcard = substring.indexOf("*") > -1;
+    const eq = string === substring;
+    if (eq) return true;
+    log({
+        'Name': 'Exponea',
+        'Type': 'EqualOrStartsOrEnds',
+        'string': string,
+        'substring': substring,
+        'withWildcard': withWildcard,
+        'containWildcard': containWildcard
+    });
+    if (!withWildcard || !containWildcard) {
+        return startsWith(string, substring) || endsWith(string, substring);
+    } else {
+        const parsedSubstring = withWildcard ? substring.split("*", 2) : [substring];
+        return startsWith(string, parsedSubstring[0]) && endsWith(string, parsedSubstring[1]); 
+    }
 }
 
 function splitAndSanitize(arr) {
     if (getType(arr) !== 'string') return [];
     return arr.split(',').map(a=>a.trim()).filter(a=>a);
+}
+
+function removeEndSlash(string) {
+    if (endsWith(string, '/')) return string.slice(0,-1);
+    return string;
+}
+function removeStartSlash(string) {
+    if (startsWith(string, '/')) return string.slice(1);
+    return string;
+}
+
+function combineURLs(baseURL, relativeURL) {
+    return (
+        relativeURL ?
+            removeEndSlash(baseURL) + '/' + removeStartSlash(relativeURL) :
+            baseURL
+    );
 }
